@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   Cleanup-Runs:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.repository == 'GitMetaio/Surfing' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}  # fork 中不运行
     runs-on: ubuntu-latest
 
     steps:

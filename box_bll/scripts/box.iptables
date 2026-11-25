@@ -634,6 +634,46 @@ tun_forward_disable() {
     } >/dev/null 2>&1
 }
 
+# ---- hardened fork: 局域网/热点设备不能直接连 mihomo 的监听端口 ----
+# 放行：本机(lo)、TPROXY 打过标记的转发流量、被 REDIRECT/DNAT 过来的流量（热点 DNS 等）
+# 其余从外部网卡直接打到 mixed/redir/tproxy/dns/controller 端口的包一律 DROP
+lan_guard_ports() {
+  local ctl_port=$(awk '/^[[:space:]]*external-controller:/ {gsub(/#.*/, ""); sub(/.*:/, ""); gsub(/[[:space:]"\047\r\n\t]/, ""); print; exit}' "${box_path}/clash/config.yaml" 2>/dev/null)
+  local mixed_port=$(awk '/^[[:space:]]*mixed-port:/ {gsub(/#.*/, ""); sub(/.*:/, ""); gsub(/[[:space:]]/, ""); print; exit}' "${box_path}/clash/config.yaml" 2>/dev/null)
+  echo "${mixed_port:-7890} ${redir_port} ${tproxy_port} ${clash_dns_port} ${ctl_port:-9090}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u
+}
+
+lan_guard_disable() {
+  for cmd in "${SYS_IPTABLES} -w 100" "${SYS_IP6TABLES} -w 100"; do
+    while ${cmd} -D INPUT -j BOX_LAN_GUARD 2>/dev/null; do :; done
+    ${cmd} -F BOX_LAN_GUARD 2>/dev/null
+    ${cmd} -X BOX_LAN_GUARD 2>/dev/null
+  done
+}
+
+lan_guard_enable() {
+  lan_guard_disable
+  [ "${lan_guard:-true}" = "true" ] || return 0
+  local ports=$(lan_guard_ports)
+  for cmd in "${SYS_IPTABLES} -w 100" "${SYS_IP6TABLES} -w 100"; do
+    ${cmd} -N BOX_LAN_GUARD 2>/dev/null || ${cmd} -F BOX_LAN_GUARD
+    # 内核缺少 mark/conntrack 匹配时不启用，避免误伤热点共享
+    if ! { ${cmd} -A BOX_LAN_GUARD -i lo -j RETURN && \
+           ${cmd} -A BOX_LAN_GUARD -m mark --mark "${mark_id}" -j RETURN && \
+           ${cmd} -A BOX_LAN_GUARD -m conntrack --ctstate DNAT -j RETURN; } 2>/dev/null; then
+      log Warn "LAN 防护: ${cmd%% *} 不支持 mark/conntrack 匹配，已跳过."
+      ${cmd} -F BOX_LAN_GUARD 2>/dev/null; ${cmd} -X BOX_LAN_GUARD 2>/dev/null
+      continue
+    fi
+    for port in ${ports}; do
+      ${cmd} -A BOX_LAN_GUARD -p tcp --dport "${port}" -j DROP
+      ${cmd} -A BOX_LAN_GUARD -p udp --dport "${port}" -j DROP
+    done
+    ${cmd} -I INPUT -j BOX_LAN_GUARD
+  done
+  log Info "LAN 防护: 已阻止外部设备直连端口 [$(echo ${ports})]."
+}
+
 destroy_all_rules() {
   {
     local target_chains="BOX_LOCAL BOX_EXTERNAL CLASH_DNS_LOCAL CLASH_DNS_EXTERNAL BOX_INPUT_FILTER"
@@ -653,6 +693,7 @@ destroy_all_rules() {
     iptables="${SYS_IPTABLES} -w 100" && stop_redirect
 
     tun_forward_disable
+    lan_guard_disable
 
     echo 1 > /proc/sys/net/netfilter/nf_conntrack_flush
   } >/dev/null 2>&1
@@ -685,6 +726,7 @@ case "$1" in
     if [ "${proxy_mode}" = "core" ]; then
         log Info "运行模式: ${proxy_mode} (TUN 纯内核转发)."
         tun_forward_enable
+        lan_guard_enable
         [ -f "${scripts_dir}/box.block" ] && "${scripts_dir}/box.block" enable >/dev/null 2>&1
         return 0
     fi
@@ -746,6 +788,7 @@ case "$1" in
     fi
 
     tun_forward_enable
+    lan_guard_enable
     log Info "服务已启动完毕."
     [ -f "${scripts_dir}/box.block" ] && "${scripts_dir}/box.block" enable >/dev/null 2>&1
     "${scripts_dir}/ctr.inotify" w >/dev/null 2>&1 &
@@ -784,6 +827,7 @@ case "$1" in
 
     if [ "${proxy_mode}" = "core" ]; then
         tun_forward_enable
+        lan_guard_enable
         log Info "规则重构完成 (TUN 纯内核转发)."
         return 0
     fi
@@ -833,6 +877,7 @@ case "$1" in
     fi
 
     tun_forward_enable
+    lan_guard_enable
     log Info "防火墙规则重构完毕，服务已恢复运行."
    "${scripts_dir}/ctr.inotify" w >/dev/null 2>&1 &
     ;;

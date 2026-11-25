@@ -23,10 +23,10 @@ log-level: silent # debug / silent
 find-process-mode: always
 proxy_fp: &proxy_fp
   client-fingerprint: chrome
-external-controller: 0.0.0.0:9090 #修改端口后，如使用磁贴请重新正确设置API端口
+external-controller: 127.0.0.1:9090 # 加固版：只监听本机，局域网/热点设备无法访问控制 API
 external-ui-url: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip"
 external-ui: "./webroot/Zash/"
-secret: "" # 面板访问密码，如在公网访问建议设置
+secret: "" # 加固版：安装时自动生成随机密码并写回这里（副本见 clash/secret.txt）
 # —————————
 # 健康检查
 p: &p
@@ -168,10 +168,9 @@ dns:
     # Cloudflare
     - https://1.1.1.1:443/dns-query#DNS连接&h3=false
     - https://1.0.0.1:443/dns-query#DNS连接&h3=false
-  direct-nameserver:
-    - 1.12.12.12
-    - 223.6.6.6
-    - 192.168.1.1
+  direct-nameserver: # 加固版：直连域名也走加密 DoH，不再明文 UDP/53
+    - https://1.12.12.12:443/dns-query#🌐 本机·本地直连&h3=false
+    - https://223.6.6.6:443/dns-query#🌐 本机·本地直连&h3=true
 # —————————
 proxies:
   - {name: 🌐 本机·本地直连, type: direct, udp: true}
@@ -196,7 +195,7 @@ proxy_groups: &proxy_groups
 # —————————
 proxy-groups:
   - name: 总模式
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/All.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/All.svg"
     type: select
     proxies:
       - ALL·延迟最低
@@ -210,73 +209,73 @@ proxy-groups:
       - ALL·其它地区
       - 🌐 本机·本地直连
   - name: 订阅更新
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Update.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Update.svg"
     type: select
     proxies:
       - 🌐 本机·本地直连
       - 总模式
   - name: 小红书
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/XiaoHongShu.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/XiaoHongShu.svg"
     <<: *proxy_groups
   - name: 抖音
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/DouYin.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/DouYin.svg"
     <<: *proxy_groups
   - name: BiliBili
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/BiliBili.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/BiliBili.svg"
     <<: *proxy_groups
   - name: Steam
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Steam.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Steam.svg"
     <<: *proxy_groups
   - name: Apple
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Apple.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Apple.svg"
     <<: *proxy_groups
   - name: Microsoft
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Microsoft.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Microsoft.svg"
     <<: *proxy_groups
   - name: Telegram
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Telegram.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Telegram.svg"
     <<: *proxy_groups
   - name: Discord
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Discord.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Discord.svg"
     <<: *proxy_groups
   - name: Spotify
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Spotify.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Spotify.svg"
     <<: *proxy_groups
   - name: TikTok
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/TikTok.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/TikTok.svg"
     <<: *proxy_groups
   - name: YouTube
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/YouTube.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/YouTube.svg"
     <<: *proxy_groups
   - name: Netflix
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Netflix.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Netflix.svg"
     <<: *proxy_groups
   - name: Google
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Google.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Google.svg"
     <<: *proxy_groups
   - name: GoogleFCM
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/GoogleFCM.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/GoogleFCM.svg"
     <<: *proxy_groups
   - name: Facebook
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Facebook.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Facebook.svg"
     <<: *proxy_groups
   - name: OpenAI
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/OpenAI.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/OpenAI.svg"
     <<: *proxy_groups
   - name: GitHub
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/GitHub.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/GitHub.svg"
     <<: *proxy_groups
   - name: Twitter(X)
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Twitter.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Twitter.svg"
     <<: *proxy_groups
   - name: DNS连接
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/DNS.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/DNS.svg"
     <<: *proxy_groups
   - name: 漏网之鱼
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/HBASE-copy.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/HBASE-copy.svg"
     <<: *proxy_groups
   - name: 广告拦截
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/No-ads-all.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/No-ads-all.svg"
     type: select
     proxies:
       - PASS
@@ -284,7 +283,7 @@ proxy-groups:
       - ⛔️ 禁止·拒绝连接
       - 🌐 DNS_Hijack
   - name: WebRTC
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/WebRTC.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/WebRTC.svg"
     type: select
     proxies:
       - ⛔️ 禁止·拒绝连接
@@ -292,45 +291,45 @@ proxy-groups:
       - REJECT-DROP
       - PASS
   - name: ALL·延迟最低
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Return.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Return.svg"
     type: url-test
     <<: *A
   - name: ALL·负载均衡
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Return.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Return.svg"
     type: load-balance
     strategy: round-robin
     <<: *A
   - name: ALL·故障转移
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Return.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Return.svg"
     type: fallback
     <<: *A
   - name: ALL·日本地区
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/JP.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/JP.svg"
     filter: "(?i)(日本|川日|东京|大阪|泉日|埼玉|沪日|深日|[^-]日|jp|japan)"
     <<: *All
   - name: ALL·中国台湾
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/CN.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/CN.svg"
     filter: "(?i)(台|新北|彰化|tw|taiwan|taipei)"
     <<: *All
   - name: ALL·香港地区
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/HK.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/HK.svg"
     filter: "(?i)(港|hk|hong ?kong)"
     <<: *All
   - name: ALL·美国地区
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/US.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/US.svg"
     filter: "(?i)(美|波特兰|达拉斯|俄勒冈|凤凰城|费利蒙|硅谷|拉斯维加斯|洛杉矶|圣何塞|圣克拉拉|西雅图|芝加哥|us|united ?states)"
     <<: *All
   - name: ALL·狮城地区
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Singapore.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Singapore.svg"
     filter: "(?i)(新加坡|坡|狮城|sg|singapore)"
     <<: *All
   - name: ALL·其它地区
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/Globe.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/Globe.svg"
     filter: ".*"
     exclude-filter: "(?i)(港|hk|hong ?kong|日本|川日|东京|大阪|泉日|埼玉|沪日|深日|[^-]日|jp|japan|美|波特兰|达拉斯|俄勒冈|凤凰城|费利蒙|硅谷|拉斯维加斯|洛杉矶|圣何塞|圣克拉拉|西雅图|芝加哥|us|united ?states|台|新北|彰化|tw|taiwan|taipei|新加坡|坡|狮城|sg|singapore|灾|网易|netease|套餐|重置|剩余|到期|订阅|群|账户|流量|有效期|时间|官网|拒绝|dns|ch|网址|售|防失)"
     <<: *All
   - name: 特殊地址
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/app/icon/User.svg"
+    icon: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/app/icon/User.svg"
     type: select
     url: https://www.baidu.com/favicon.ico
     interval: *Time
@@ -351,13 +350,24 @@ rule-anchor:
 # Github Actions 每日自动同步跟随更新
 # 规则提供者: https://github.com/MetaCubeX/meta-rules-dat
 rule-providers:
+  # Anximi（HyperOS 隐私模块）导出的拦截规则集；未安装 Anximi 时是占位文件，不影响使用
+  anximi-domains:
+    type: file
+    behavior: domain
+    format: yaml
+    path: ./rules/anximi-domains.yaml
+  anximi-process:
+    type: file
+    behavior: classical
+    format: yaml
+    path: ./rules/anximi-process.yaml
   自定义规则: # 主要用于广告/业务误杀自定义放行
     <<: *Local
     path: ./etc/自定义规则.list
   WebRTC_端/域:
     <<: *Classical
     path: ./rules/WebRTC.list
-    url: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@main/box_bll/clash/rules/WebRTC.list"
+    url: "https://cdn.jsdelivr.net/gh/qirara/Surfing@main/box_bll/clash/rules/WebRTC.list"
   CN_IP:
     <<: *IPCIDR
     path: ./rules/CN_IP.mrs
@@ -482,6 +492,8 @@ rule-providers:
 rules:
   - DST-PORT,53,🌐 DNS_Hijack
   - DST-PORT,853,DNS连接
+  - RULE-SET,anximi-domains,REJECT
+  - RULE-SET,anximi-process,REJECT
   - RULE-SET,自定义规则,特殊地址
   - RULE-SET,WebRTC_端/域,WebRTC
   - RULE-SET,GoogleFCM_域,GoogleFCM

@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   Fetch-Data:
+    if: github.repository == 'GitMetaio/Surfing'  # fork 中不运行上游的发布/清理任务
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Data Branch
