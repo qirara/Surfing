@@ -1,0 +1,62 @@
+name: Hardened Build
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mihomo_version:
+        description: 'mihomo tag，例如 v1.19.17（留空 = latest）'
+        required: false
+      zash_version:
+        description: 'Zashboard tag（留空 = latest）'
+        required: false
+      curl_ref:
+        description: 'Cross-Compiled-Binaries-Android 的 commit（留空 = 该文件最新 commit）'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      isAlpha: true
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MIHOMO_VERSION: ${{ inputs.mihomo_version }}
+      ZASH_VERSION: ${{ inputs.zash_version }}
+      CURL_REF: ${{ inputs.curl_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Short hash
+        run: echo "SHORT_HASH=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Shell syntax check
+        run: |
+          for f in customize.sh uninstall.sh Surfing_service.sh build.sh; do sh -n "$f"; done
+          for f in box_bll/scripts/*; do bash -n "$f"; done
+
+      - name: Build
+        id: build
+        run: sh build.sh
+
+      - name: Check zip contents
+        run: |
+          z="${{ steps.build.outputs.zip }}"
+          unzip -l "$z" | tee contents.txt
+          if grep -qiE 'SurfingTile|\.apk$' contents.txt; then echo "::error::zip 内不应包含 SurfingTile/APK"; exit 1; fi
+          grep -q 'box_bll/bin/clash' contents.txt
+          grep -q 'BUILD-MANIFEST.txt' contents.txt
+          unzip -p "$z" module.prop | grep -q '^updateJson=' && { echo "::error::module.prop 不应有 updateJson"; exit 1; } || true
+          { echo '### Build manifest'; echo '```'; cat BUILD-MANIFEST.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.zip }}
+          path: ${{ steps.build.outputs.zip }}
+          if-no-files-found: error

@@ -196,6 +196,40 @@ remove_old_surfingtile() {
   [ -f "$OLD_UNINSTALL" ] && sh "$OLD_UNINSTALL"
 }
 
+# ---- hardened fork additions ----
+SECRET_FILE="$BOX_BLL_PATH/clash/secret.txt"
+
+# 读取 config 中的 secret（兼容有无引号）
+read_secret() { [ -f "$1" ] && sed -n 's/^secret:[[:space:]]*"\{0,1\}\([^"# ]*\).*/\1/p' "$1" | head -n 1; }
+
+# external-controller 只监听 127.0.0.1，并确保有面板密码：沿用旧密码，否则随机生成
+ensure_controller_secret() {
+  cfg="$BOX_BLL_PATH/clash/config.yaml"
+  [ -f "$cfg" ] || return 0
+  [ -n "$(read_secret "$cfg")" ] && return 0
+  sec=$(read_secret "$cfg.bak")
+  [ -n "$sec" ] || sec=$(cat "$SECRET_FILE" 2>/dev/null)
+  [ -n "$sec" ] || sec=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  sed -i "s|^secret:.*|secret: \"${sec}\" # 面板访问密码（安装时随机生成，副本见 clash/secret.txt）|" "$cfg"
+  printf '%s\n' "$sec" > "$SECRET_FILE"; chmod 600 "$SECRET_FILE"
+  print_lang "面板密码 (secret): $sec" "Dashboard secret: $sec"
+  print_lang "已保存到 $SECRET_FILE" "Saved to $SECRET_FILE"
+}
+
+# Anximi 规则集占位文件：默认配置引用了 ./rules/anximi-*.yaml，Anximi 会覆盖它们
+ensure_anximi_placeholders() {
+  d="$BOX_BLL_PATH/clash/rules"; mkdir -p "$d"
+  [ -f "$d/anximi-domains.yaml" ] || printf "payload:\n  - 'anximi.invalid'\n" > "$d/anximi-domains.yaml"
+  [ -f "$d/anximi-process.yaml" ] || printf 'payload:\n  - PROCESS-NAME,anximi.placeholder\n' > "$d/anximi-process.yaml"
+}
+
+warn_surfingtile() {
+  if pm path com.github.surfing >/dev/null 2>&1 || pm path com.surfing.tile >/dev/null 2>&1; then
+    print_lang "注意: 检测到已安装 SurfingTile。加固版不再安装/更新它（闭源、内置 Firebase 统计与远程配置）。" "Note: SurfingTile is installed. The hardened build no longer installs/updates it (closed source, ships Firebase analytics/remote config)."
+    print_lang "如不需要，可执行: pm uninstall com.github.surfing" "To remove it: pm uninstall com.github.surfing"
+  fi
+}
+
 choose_language
 
 sync_version_from_module_prop
@@ -203,24 +237,9 @@ sync_version_from_module_prop
       print_lang "正在更新模块..." "Updating module..."
       ui_print "↴"
 
-      install_surfingtile_if_needed
       cp -f "$MODPATH/box_bll/bin/busybox" "$BIN_PATH/busybox" && init_busybox_toolchain
       cp -f "$MODPATH/box_bll/bin/curl" "$BIN_PATH/curl"
       extract_subscribe_urls
-
-      if pm path "com.github.surfing" >/dev/null 2>&1; then
-        CORE_HASH=$(grep '^version=' "$MODPATH/module.prop" | sed 's/.*(//; s/).*//; s/.*-//')
-        [ -n "$CORE_HASH" ] && {
-          SYNC_DATA=$(settings get global surfing_sync_data 2>/dev/null)
-          case "$SYNC_DATA" in
-            ""|null) ;;
-            *)
-              NOW_TS=$(date +%s)
-              settings put global surfing_sync_data "$(echo "$SYNC_DATA" | sed "s|^ID=[0-9]*|ID=$NOW_TS|; s|version=[^|]*|version=$CORE_HASH|")"
-              ;;
-          esac
-        }
-      fi
 
       [ -f "$HOSTS_FILE" ] && cp -f "$HOSTS_FILE" "$HOSTS_BACKUP"
       mkdir -p "$HOSTS_PATH" && touch "$HOSTS_FILE"
@@ -236,7 +255,7 @@ sync_version_from_module_prop
       [ -f "$OLD_CONFIG" ] && {
         print_lang "正在迁移网络服务控制设置..." "Migrating network service control settings..."
         TMP_CONFIG="${NEW_CONFIG}.tmp"; cp -f "$NEW_CONFIG" "$TMP_CONFIG"
-        VARS="enable_network_service_control bypass_via_iptables enable_cellular_proxy enable_wifi_proxy enable_ssid_filter enable_mac_filter use_wifi_list_mode blacklist_wifi_macs whitelist_wifi_macs blacklist_wifi_ssids whitelist_wifi_ssids ap_list gid_list user_packages_list proxy_mode proxy_method ipv6"
+        VARS="lan_guard enable_network_service_control bypass_via_iptables enable_cellular_proxy enable_wifi_proxy enable_ssid_filter enable_mac_filter use_wifi_list_mode blacklist_wifi_macs whitelist_wifi_macs blacklist_wifi_ssids whitelist_wifi_ssids ap_list gid_list user_packages_list proxy_mode proxy_method ipv6"
         for var in $VARS; do
           val=$(grep "^${var}=" "$OLD_CONFIG" | cut -d'=' -f2-)
           [ -n "$val" ] && sed "s@^${var}=.*@${var}=${val}@" "$TMP_CONFIG" > "${TMP_CONFIG}.bak" && mv -f "${TMP_CONFIG}.bak" "$TMP_CONFIG"
@@ -262,18 +281,24 @@ sync_version_from_module_prop
 
       choose_to_umount_hosts_file
       choose_to_restore_config
-      
+      ensure_controller_secret
+      ensure_anximi_placeholders
+      warn_surfingtile
+
       print_lang "更新已完成." "Update completed."
     else
       print_lang "正在安装..." "Installing..."
       ui_print "↴"
-      mv "$MODPATH/box_bll" /data/adb/; init_busybox_toolchain; install_surfingtile_apk
+      mv "$MODPATH/box_bll" /data/adb/; init_busybox_toolchain
       [ -f "$BOX_BLL_PATH/block.list" ] || echo "com.mobiletools.systemhelper" > "$BOX_BLL_PATH/block.list"
       cp -f "$BOX_BLL_PATH/clash/config.yaml" "$MODPATH/default_config.yaml"
       print_lang "模块安装完毕." "Module installation completed."
       
       choose_to_umount_hosts_file
       choose_to_restore_config
+      ensure_controller_secret
+      ensure_anximi_placeholders
+      warn_surfingtile
     fi
 
 mv -f "$MODPATH/Surfing_service.sh" "$service_dir/"; rm -f "$SURFING_TILE_ZIP"

@@ -1,106 +1,107 @@
 #!/bin/sh
+# Hardened build (qirara/Surfing fork)
+# 与上游的区别：
+#   - 不打包 SurfingTile APK（闭源，内置 Firebase Analytics / Crashlytics / Remote Config / FCM）
+#   - 下载的二进制都按 GitHub 发布资产的 sha256 digest 校验，结果写入 zip 内 BUILD-MANIFEST.txt
+#   - 可通过环境变量锁定版本：MIHOMO_VERSION / ZASH_VERSION / CURL_REF
+set -eu
 
 isAlpha="${isAlpha:-false}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 CORE_DST="box_bll/bin/clash"
-CORE_TMP="clash_core.gz"
-MIHOMO_API="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
-MIHOMO_BASE="https://github.com/MetaCubeX/mihomo/releases/download"
+MIHOMO_REPO="MetaCubeX/mihomo"
 MIHOMO_NAME="mihomo-android-arm64-v8"
 
 CURL_DST="box_bll/bin/curl"
-CURL_TMP="curl_tmp"
-CURL_URL="https://raw.githubusercontent.com/Zackptg5/Cross-Compiled-Binaries-Android/master/curl/curl-arm64"
+CURL_REPO="Zackptg5/Cross-Compiled-Binaries-Android"
+CURL_PATH="curl/curl-arm64"
 
-ZASH_API="https://api.github.com/repos/Zephyruso/zashboard/releases/latest"
+ZASH_REPO="Zephyruso/zashboard"
 ZASH_DST="box_bll/clash/webroot/Zash"
-ZASH_TMP="zash_dist.zip"
 
-get_latest_tag() {
-    curl -fsSL --retry 5 --retry-delay 5 \
-        -H "Authorization: token $GITHUB_TOKEN" "$1" \
-        | grep '"tag_name":' | head -n 1 \
-        | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
+MANIFEST="BUILD-MANIFEST.txt"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+api() {
+    if [ -n "$GITHUB_TOKEN" ]; then
+        curl -fsSL --retry 5 --retry-delay 5 -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$1"
+    else
+        curl -fsSL --retry 5 --retry-delay 5 -H "Accept: application/vnd.github+json" "$1"
+    fi
 }
 
-latest_version=$(get_latest_tag "$MIHOMO_API")
+# release_json <repo> <tag|latest>
+release_json() {
+    if [ "$2" = "latest" ]; then api "https://api.github.com/repos/$1/releases/latest"
+    else api "https://api.github.com/repos/$1/releases/tags/$2"; fi
+}
 
-if [ -z "$latest_version" ]; then
-    echo "Error: Failed to fetch Mihomo version."
-    exit 1
-fi
-
-echo "Latest Mihomo version: $latest_version"
-
-download_url="${MIHOMO_BASE}/${latest_version}/${MIHOMO_NAME}-${latest_version}.gz"
-
-echo "Downloading Mihomo core..."
-if curl -fL --retry 5 --retry-delay 5 "$download_url" -o "$CORE_TMP"; then
-    gunzip -c "$CORE_TMP" > "$CORE_DST"
-    rm -f "$CORE_TMP"
-    chmod +x "$CORE_DST"
-else
-    echo "Error: Mihomo download failed."
-    exit 1
-fi
-
-echo "Downloading curl..."
-if curl -fL --retry 5 --retry-delay 5 "$CURL_URL" -o "$CURL_TMP"; then
-    mv -f "$CURL_TMP" "$CURL_DST"
-    chmod +x "$CURL_DST"
-else
-    echo "Error: curl download failed."
-    exit 1
-fi
-
-zash_latest_version=$(get_latest_tag "$ZASH_API")
-if [ -n "$zash_latest_version" ]; then
-    echo "Latest Zashboard version: $zash_latest_version"
-    zash_url="https://github.com/Zephyruso/zashboard/releases/download/${zash_latest_version}/dist.zip"
-    echo "Downloading Zashboard..."
-    if curl -fL --retry 5 --retry-delay 5 "$zash_url" -o "$ZASH_TMP"; then
-        rm -rf dist Zash "$ZASH_DST"
-        mkdir -p "$(dirname "$ZASH_DST")"
-        unzip -q "$ZASH_TMP" -d "./zash_temp"
-        if [ -d "./zash_temp/dist" ]; then
-            mv "./zash_temp/dist" "$ZASH_DST"
-            echo "Zashboard deployed to $ZASH_DST"
-        else
-            echo "Error: Unexpected ZIP structure in Zashboard."
-        fi
-        rm -rf zash_temp "$ZASH_TMP"
+# fetch_asset <repo> <tag|latest> <asset-name-regex> <out>  -> 打印 "tag name sha256"
+fetch_asset() {
+    json=$(release_json "$1" "$2")
+    tag=$(printf '%s' "$json" | jq -r '.tag_name')
+    asset=$(printf '%s' "$json" | jq -c --arg re "$3" '[.assets[] | select(.name | test($re))][0]')
+    [ "$asset" != "null" ] || { echo "Error: $1 $tag 没有匹配 $3 的资产" >&2; exit 1; }
+    name=$(printf '%s' "$asset" | jq -r '.name')
+    url=$(printf '%s' "$asset" | jq -r '.browser_download_url')
+    digest=$(printf '%s' "$asset" | jq -r '.digest // empty' | sed 's/^sha256://')
+    curl -fL --retry 5 --retry-delay 5 "$url" -o "$4"
+    actual=$(sha256sum "$4" | awk '{print $1}')
+    if [ -n "$digest" ]; then
+        [ "$digest" = "$actual" ] || { echo "Error: $name sha256 不匹配 (GitHub $digest, 实际 $actual)" >&2; exit 1; }
+        echo "$name: sha256 与 GitHub 发布记录一致" >&2
     else
-        echo "Error: Zashboard download failed."
+        echo "Warn: $name 没有 GitHub digest，仅记录哈希" >&2
     fi
-else
-    echo "Error: Failed to fetch Zashboard version."
-fi
+    echo "$tag $name $actual"
+}
 
-APK_DIR="app/version/com.github.surfing"
-TILE_ZIP="SurfingTile.zip"
-TILE_STAGE=".tile_stage"
+: > "$MANIFEST"
+echo "Surfing hardened build $(date -u '+%Y-%m-%dT%H:%M:%SZ') commit ${SHORT_HASH:-$(git rev-parse --short=7 HEAD)}" >> "$MANIFEST"
 
-rm -rf "$TILE_STAGE" "$TILE_ZIP"
-mkdir -p "$TILE_STAGE"
-latest_apk=$(find "$APK_DIR" -maxdepth 1 -name "SurfingTile_*_release.apk" 2>/dev/null | sort -V | tail -n 1)
-if [ -f "$latest_apk" ]; then
-    cp -f "$latest_apk" "$TILE_STAGE/com.github.surfing.apk"
-    TILE_CODE=$(awk -F: '/versionCode/ {gsub(/[^0-9]/, "", $2); print $2; exit}' "$APK_DIR/release.json" 2>/dev/null)
-    TILE_NAME=$(awk -F'"' '/versionName/ {print $4; exit}' "$APK_DIR/release.json" 2>/dev/null)
-    printf 'versionCode=%s\nversionName=%s\n' "$TILE_CODE" "$TILE_NAME" > "$TILE_STAGE/version"
-    (cd "$TILE_STAGE" && zip -r -o -X "../$TILE_ZIP" ./*)
+# --- mihomo
+out=$(fetch_asset "$MIHOMO_REPO" "${MIHOMO_VERSION:-latest}" "^${MIHOMO_NAME}-v[0-9.]+\\.gz$" "$WORK/core.gz") || exit 1
+set -- $out
+echo "mihomo $1 $2 sha256=$3" >> "$MANIFEST"
+gunzip -c "$WORK/core.gz" > "$CORE_DST"
+chmod +x "$CORE_DST"
+echo "mihomo binary sha256=$(sha256sum "$CORE_DST" | awk '{print $1}')" >> "$MANIFEST"
+
+# --- curl（仓库原始文件，没有发布 digest：锁定到 commit 并记录哈希）
+if [ -z "${CURL_REF:-}" ]; then
+    CURL_REF=$(api "https://api.github.com/repos/$CURL_REPO/commits?path=$CURL_PATH&per_page=1" | jq -r '.[0].sha') || exit 1
 fi
-rm -rf "$TILE_STAGE"
+curl -fL --retry 5 --retry-delay 5 "https://raw.githubusercontent.com/$CURL_REPO/$CURL_REF/$CURL_PATH" -o "$CURL_DST"
+chmod +x "$CURL_DST"
+echo "curl $CURL_REPO@$CURL_REF sha256=$(sha256sum "$CURL_DST" | awk '{print $1}')" >> "$MANIFEST"
+
+# --- Zashboard（本地面板，构建时打包；运行时不再自动下载）
+out=$(fetch_asset "$ZASH_REPO" "${ZASH_VERSION:-latest}" '^dist\.zip$' "$WORK/zash.zip") || exit 1
+set -- $out
+echo "zashboard $1 $2 sha256=$3" >> "$MANIFEST"
+rm -rf "$ZASH_DST" "$WORK/zash"
+unzip -q "$WORK/zash.zip" -d "$WORK/zash"
+[ -d "$WORK/zash/dist" ] || { echo "Error: Zashboard ZIP 结构异常" >&2; exit 1; }
+mkdir -p "$(dirname "$ZASH_DST")"
+mv "$WORK/zash/dist" "$ZASH_DST"
+
+# --- 仓库内自带的二进制 / 数据，只记录哈希
+for f in box_bll/bin/busybox box_bll/clash/ASN.mmdb; do
+    echo "$f (repo) sha256=$(sha256sum "$f" | awk '{print $1}')" >> "$MANIFEST"
+done
+echo "SurfingTile APK: not bundled" >> "$MANIFEST"
 
 version=$(grep '^version=' module.prop | awk -F '=' '{print $2}' | sed 's/ (.*//')
 short_hash=${SHORT_HASH:-$(git rev-parse --short=7 HEAD)}
 
 if [ "$isAlpha" = "true" ]; then
-    new_version="${version} (alpha-${short_hash})"
-    filename="Surfing_alpha_${short_hash}.zip"
+    new_version="${version} (hardened-${short_hash})"
+    filename="Surfing_hardened_${short_hash}.zip"
 else
-    new_version="${version} (release-${short_hash})"
-    filename="Surfing_${version}_release.zip"
+    new_version="${version} (hardened-release-${short_hash})"
+    filename="Surfing_${version}_hardened.zip"
 fi
 
 sed -i "s/^version=.*/version=${new_version}/" module.prop
@@ -112,5 +113,9 @@ zip -r -o -X "$filename" ./ \
     -x 'folder/*' \
     -x 'build.sh' \
     -x 'Surfing.json' \
+    -x 'SECURITY_AUDIT.md'
 
+cat "$MANIFEST"
 echo "Build Completed: $filename"
+[ -n "${GITHUB_OUTPUT:-}" ] && echo "zip=$filename" >> "$GITHUB_OUTPUT"
+exit 0
